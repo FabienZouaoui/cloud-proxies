@@ -1,0 +1,77 @@
+#---------------------------------------------------------------------
+# Global settings
+#---------------------------------------------------------------------
+global
+    #log         127.0.0.1 local2 # Haproxy cannot log to stdout ?
+    chroot      /var/lib/haproxy
+    pidfile     /var/run/haproxy.pid
+    maxconn     8000
+    user        haproxy
+    group       haproxy
+    daemon
+
+    # turn on stats unix socket
+    stats socket /var/lib/haproxy/stats level admin
+
+#---------------------------------------------------------------------
+# common defaults that all the 'listen' and 'backend' sections will
+# use if not designated in their block
+#---------------------------------------------------------------------
+defaults
+    mode                    http
+    option                  dontlognull
+    option                  http-server-close
+    #option forwardfor       except 127.0.0.0/8
+    option                  redispatch
+    retries                 3
+    timeout http-request    10s
+    timeout queue           1m
+    timeout connect         1m
+    timeout client          1m
+    timeout server          1m
+    timeout http-keep-alive 10s
+    timeout check           10s
+    maxconn                 8000
+
+#---------------------------------------------------------------------
+# Statistics
+#---------------------------------------------------------------------
+listen stats
+    bind *:81
+    mode http
+    stats enable
+    stats realm Haproxy\ Statistics 
+    stats uri /haproxy_stats
+    stats hide-version
+    #stats auth admin:admin
+
+#---------------------------------------------------------------------
+# Frontend
+#---------------------------------------------------------------------
+frontend {{ provider }}_proxies
+    bind *:8001
+    mode http
+    maxconn 8000
+    #syslog seems to be needed for that
+    #option tcplog
+    #option logasap
+    #option dontlognull
+    #option dontlog-normal
+    timeout client 1m
+    default_backend {{ provider }}_proxies
+
+#---------------------------------------------------------------------
+# Backend
+#---------------------------------------------------------------------
+backend {{ provider }}_proxies
+    mode http
+    fullconn 8000
+    option redispatch
+    retries 5
+    balance roundrobin
+    #timeout connect 10s
+    #timeout server  10s   
+    http-request add-header Proxy-Authorization "Basic {{ base64auth }}"
+{% for instance in instances %}
+    server {{ instance['ip'] }}--{{ instance['port'] }} {{ instance['ip'] }}:{{ instance['port'] }} check
+{% endfor %}
